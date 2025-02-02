@@ -1,0 +1,52 @@
+;
+; LPC Host Read Controller (SM2)
+; Handles LPC read transactions (Peripheral to Host)
+; Word 0: [31:28]=1111, [27:24]=CT/IDSEL, [23:20]=SIZE
+; Word 1: Address
+;
+.program lpc_host_read
+.side_set 1 opt         ; LCLK on side-set pin
+
+.wrap_target
+idle:
+    pull noblock        ; Get command
+    jmp !osre idle     ; Wait for transaction
+
+    ; START + Frame    
+    set pins, 1        ; LFRAME#
+    set pindirs, 1     ; LAD output
+    out pins, 4 side 0 ; START (1111)
+    out pins, 4 side 1 ; CT/IDSEL
+
+    ; Address phase - autopull
+    pull           side 0 ; Get address
+    out pins, 4    side 1 ; [31:28]
+    out pins, 4    side 0 ; [27:24]
+    out pins, 4    side 1 ; [23:20]
+    out pins, 4    side 0 ; [19:16]
+    out pins, 4    side 1 ; [15:12]
+    out pins, 4    side 0 ; [11:8]
+    out pins, 4    side 1 ; [7:4]
+    out pins, 4    side 0 ; [3:0]
+
+    ; TAR cycle
+    set pindirs, 0  side 1 ; LAD input
+sync_wait:
+    in pins, 4     side 0 ; Read SYNC
+    jmp pin sync_wait    ; Wait for ready
+
+;
+; Read data section fixed
+    ; Read data phase
+    mov isr, null      ; Clear ISR before reading
+    set x, 7     side 1 ; 8 nibbles for 32-bit
+
+read_loop:
+    in pins, 4   side 0 ; Read nibble
+    nop          side 1 ; Maintain timing
+    jmp x-- read_loop  ; Next nibble until done
+
+    push              ; Push assembled 32-bit value
+    jmp idle    side 0 ; Done
+    
+.wrap

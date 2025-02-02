@@ -1,0 +1,48 @@
+;
+; LPC Host Write Controller (SM1)
+; Handles LPC write transactions (Host to Peripheral)
+; Word 0: [31:28]=1111, [27:24]=CT/IDSEL, [23:20]=SIZE
+; Word 1: Address
+; Word 2: Write data
+;
+.program lpc_host_write
+.side_set 1 opt         ; LCLK on side-set pin
+
+.wrap_target
+idle:
+    pull noblock        ; Get command
+    jmp !osre idle     ; Wait for transaction
+
+    ; START + Frame    
+    set pins, 1        ; LFRAME#
+    set pindirs, 1     ; LAD output
+    out pins, 4 side 0 ; START (1111)
+    out pins, 4 side 1 ; CT/IDSEL
+
+    ; Address phase - autopull
+    pull           side 0 ; Get address
+    out pins, 4    side 1 ; [31:28]
+    out pins, 4    side 0 ; [27:24]
+    out pins, 4    side 1 ; [23:20]
+    out pins, 4    side 0 ; [19:16]
+    out pins, 4    side 1 ; [15:12]
+    out pins, 4    side 0 ; [11:8]
+    out pins, 4    side 1 ; [7:4]
+    out pins, 4    side 0 ; [3:0]
+
+    ; Write data
+    pull           side 1 ; Get write data
+    set x, 7       side 0 ; 8 nibbles
+write_loop:
+    out pins, 4    side 1 ; Write data nibble
+    jmp x-- write_loop side 0
+
+    ; Wait for SYNC
+    set pindirs, 0  side 1 ; TAR - LAD input
+sync_wait:
+    in pins, 4     side 0 ; Read SYNC
+    jmp pin sync_wait    ; Wait for ready
+
+    ; Done - return to idle
+    jmp idle      side 1
+.wrap

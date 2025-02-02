@@ -1,0 +1,55 @@
+;
+; LPC I/O Write Controller
+; Optimized for I/O operations only (16-bit ports)
+; Input format:
+; Word 0: [31:28]=1111, [15:0]=Port
+; Word 1: Write data
+;
+.program lpc_io_write
+.side_set 1 opt         ; LCLK on side-set pin
+
+.wrap_target
+idle:
+    pull noblock        ; Get port address
+    jmp !osre idle     ; Wait for transaction
+
+    ; START + Frame    
+    set pins, 1        ; LFRAME#
+    set pindirs, 1     ; LAD output
+    
+    ; START field (1111)
+    mov osr, !null     ; Load 1111
+    out pins, 4 side 0 ; START
+    nop        side 1
+    
+    ; Cycle type (0110 for I/O write)
+    mov osr, null      ; Clear OSR
+    set x, 6          ; I/O write = 0110
+    mov osr, x
+    out pins, 4 side 0 ; Output 0110
+    nop        side 1
+
+    ; Port address (16-bit)
+    out pins, 4 side 0 ; [15:12]
+    nop        side 1
+    out pins, 4 side 0 ; [11:8]
+    nop        side 1
+    out pins, 4 side 0 ; [7:4]
+    nop        side 1
+    out pins, 4 side 0 ; [3:0]
+    nop        side 1
+
+    ; Write data
+    pull        side 0 ; Get data
+    out pins, 4 side 1 ; First nibble
+    out pins, 4 side 0 ; Second nibble
+    
+    ; TAR cycle
+    set pindirs, 0 side 1 ; LAD input
+sync_wait:
+    in pins, 4  side 0   ; Read SYNC
+    jmp pin sync_wait    ; Wait for ready
+
+    ; Done
+    jmp idle    side 1   ; Back to idle
+.wrap
